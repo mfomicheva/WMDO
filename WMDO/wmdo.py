@@ -7,10 +7,13 @@ from gensim.models import KeyedVectors
 from bisect import bisect_left
 
 
-def load_wv(path, binned):
+def load_wv(path, language='en', existing=None, binned=False):
     W = KeyedVectors.load_word2vec_format(path, binary=binned)
     W.init_sims(replace=True)
-    return W
+    result = existing if existing else {}
+    assert not language in result
+    result[language] = W
+    return result
 
 
 def takeClosest(myList, myNumber):
@@ -71,7 +74,11 @@ def fragmentation(ref_list, cand_list, vc, flow):
         return 0
 
 
-def wmdo(wvvecs, ref, cand, missing, dim, delta=0.18, alpha=0.1):
+def get_input_words(text, language):
+    return ['{}{}'.format(language, w.lower()) for w in word_tokenize(text)]
+
+
+def wmdo(wvvecs, ref, cand, ref_lang='en', cand_lang='en', delta=0.18, alpha=0.1):
     '''
     wvvecs: word vectors -- retrieved from load_wv method
     ref: reference translation
@@ -81,8 +88,9 @@ def wmdo(wvvecs, ref, cand, missing, dim, delta=0.18, alpha=0.1):
     delta: weight of fragmentation penalty
     alpha: weight of missing word penalty
     '''
-    ref_list = [w.lower() for w in word_tokenize(ref)]
-    cand_list = [w.lower() for w in word_tokenize(cand)]
+
+    ref_list = get_input_words(ref, ref_lang)
+    cand_list = get_input_words(cand, cand_lang)
 
     vc = CountVectorizer().fit(ref_list + cand_list)
 
@@ -91,15 +99,20 @@ def wmdo(wvvecs, ref, cand, missing, dim, delta=0.18, alpha=0.1):
     v_obj = v_obj.toarray().ravel()
     v_cap = v_cap.toarray().ravel()
 
+    dim = wvvecs[ref_lang].vector_size
+
     # need to deal with missing words
     wvoc = []
+    missing = {}
     for w in vc.get_feature_names():
-        if w in wvvecs:
-            wvoc.append(wvvecs[w])
+        lang = w[:2]
+        word = w[2:]
+        if word in wvvecs[lang]:
+            wvoc.append(wvvecs[lang][word])
         else:
-            if w not in missing:
-                missing[w] = np.zeros(dim)
-            wvoc.append(missing[w])
+            if word not in missing:
+                missing[word] = np.zeros(dim)
+            wvoc.append(missing[word])
 
     distance_matrix = cosine_distances(wvoc)
 
@@ -116,8 +129,6 @@ def wmdo(wvvecs, ref, cand, missing, dim, delta=0.18, alpha=0.1):
     (wmd, flow) = emd_with_flow(v_obj, v_cap, distance_matrix)
 
     # adding penalty
-    penalty = 0
-
     ratio = fragmentation(ref_list, cand_list, vc, flow)
     if ratio > 1:
         ratio = 1
