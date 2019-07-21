@@ -76,8 +76,8 @@ def fragmentation(ref_list, cand_list, vc, flow):
         return 0
 
 
-def get_input_words(text, language):
-    return ['{}{}'.format(language, w.lower()) for w in word_tokenize(text.replace('-', ' '))]
+def get_input_words(text):
+    return [w.lower() for w in word_tokenize(text)]
 
 
 def wmdo(wvvecs, ref, cand, ref_lang='en', cand_lang='en', delta=0.18, alpha=0.1):
@@ -91,8 +91,8 @@ def wmdo(wvvecs, ref, cand, ref_lang='en', cand_lang='en', delta=0.18, alpha=0.1
     alpha: weight of missing word penalty
     '''
 
-    ref_list = get_input_words(ref, ref_lang)
-    cand_list = get_input_words(cand, cand_lang)
+    ref_list = get_input_words(ref)
+    cand_list = get_input_words(cand)
 
     ref = ' '.join(ref_list)
     cand = ' '.join(cand_list)
@@ -110,21 +110,13 @@ def wmdo(wvvecs, ref, cand, ref_lang='en', cand_lang='en', delta=0.18, alpha=0.1
     wvoc = []
     missing = {}
 
-    for w in vc.get_feature_names():
-        lang = w[:2]
-        word = w[2:]
-        try:
-            if word in wvvecs[lang]:
-                wvoc.append(wvvecs[lang][word])
-            else:
-                if word not in missing:
-                    missing[word] = np.zeros(dim)
-                wvoc.append(missing[word])
-        except KeyError:
-            # tokenization mismatch, can be partially fixed by using CountVectorizer(token_pattern=r'(?u)\b[A-Za-z\-\'][A-Za-z\-\']+\b')
-            sys.stderr('Different tokenization. Skipping word {}'.format(word))
+    for word in vc.get_feature_names():
+        if word in wvvecs[cand_lang]:
+            wvoc.append(wvvecs[cand_lang][word])
+        elif word in wvvecs[ref_lang]:
+            wvoc.append(wvvecs[ref_lang][word])
+        else:
             if word not in missing:
-                sys.stderr('Word {} is missing'.format(word))
                 missing[word] = np.zeros(dim)
             wvoc.append(missing[word])
 
