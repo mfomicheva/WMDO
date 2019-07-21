@@ -9,8 +9,8 @@ def test_computes_wmdo_same_languge():
     vectors_file = create_vectors_file()
     vectors = load_wv(vectors_file, binned=False)
     os.remove(vectors_file)
-    test = 'test'
-    reference = 'test'
+    test = 'test .'
+    reference = 'test .'
     score = wmdo(vectors, test, reference, delta=0.18, alpha=0.10)
     assert score == float('inf')
     assert score

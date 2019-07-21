@@ -18,7 +18,7 @@ def main():
     parser.add_argument('-l', '--languages', nargs='+', required=True)
     parser.add_argument('-v', '--vectors', nargs='+', required=True)
     parser.add_argument('-o', '--output', required=False, default=None)
-    parser.add_argument('-b', '--binary', required=False, default=False)
+    parser.add_argument('-b', '--binary', required=False, default=False, action='store_true')
     args = parser.parse_args()
 
     reference_lines = read_file(args.reference)
@@ -27,13 +27,21 @@ def main():
     languages = args.languages
     vector_files = args.vectors
     assert len(vector_files) == len(languages)
+
+    print('Loading vectors...')
     vectors = load_wv(vector_files[0], language=languages[0], binned=args.binary)
-    if len(languages) > 0:
+    if len(languages) > 1:
         vectors = load_wv(vector_files[1], language=languages[1], existing=vectors, binned=args.binary)
 
+    print('Computing wmdo...')
     out = open(args.output, 'w') if args.output else sys.stdout
     for ref, trans in zip(reference_lines, translation_lines):
-        score = wmdo(vectors, ref, trans, ref_lang=languages[0], cand_lang=languages[1])
+        ref_lang = languages[0]
+        if len(languages) > 1:
+            cand_lang = languages[1]
+        else:
+            cand_lang = ref_lang
+        score = wmdo(vectors, ref, trans, ref_lang=ref_lang, cand_lang=cand_lang)
         out.write('{}\n'.format(score))
 
 

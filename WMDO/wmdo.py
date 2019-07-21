@@ -1,4 +1,6 @@
 import numpy as np
+import sys
+
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.metrics.pairwise import cosine_distances
 from pyemd import emd_with_flow
@@ -75,7 +77,7 @@ def fragmentation(ref_list, cand_list, vc, flow):
 
 
 def get_input_words(text, language):
-    return ['{}{}'.format(language, w.lower()) for w in word_tokenize(text)]
+    return ['{}{}'.format(language, w.lower()) for w in word_tokenize(text.replace('-', ' '))]
 
 
 def wmdo(wvvecs, ref, cand, ref_lang='en', cand_lang='en', delta=0.18, alpha=0.1):
@@ -92,6 +94,9 @@ def wmdo(wvvecs, ref, cand, ref_lang='en', cand_lang='en', delta=0.18, alpha=0.1
     ref_list = get_input_words(ref, ref_lang)
     cand_list = get_input_words(cand, cand_lang)
 
+    ref = ' '.join(ref_list)
+    cand = ' '.join(cand_list)
+
     vc = CountVectorizer().fit(ref_list + cand_list)
 
     v_obj, v_cap = vc.transform([ref, cand])
@@ -104,13 +109,22 @@ def wmdo(wvvecs, ref, cand, ref_lang='en', cand_lang='en', delta=0.18, alpha=0.1
     # need to deal with missing words
     wvoc = []
     missing = {}
+
     for w in vc.get_feature_names():
         lang = w[:2]
         word = w[2:]
-        if word in wvvecs[lang]:
-            wvoc.append(wvvecs[lang][word])
-        else:
+        try:
+            if word in wvvecs[lang]:
+                wvoc.append(wvvecs[lang][word])
+            else:
+                if word not in missing:
+                    missing[word] = np.zeros(dim)
+                wvoc.append(missing[word])
+        except KeyError:
+            # tokenization mismatch, can be partially fixed by using CountVectorizer(token_pattern=r'(?u)\b[A-Za-z\-\'][A-Za-z\-\']+\b')
+            sys.stderr('Different tokenization. Skipping word {}'.format(word))
             if word not in missing:
+                sys.stderr('Word {} is missing'.format(word))
                 missing[word] = np.zeros(dim)
             wvoc.append(missing[word])
 
