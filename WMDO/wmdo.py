@@ -1,5 +1,4 @@
 import numpy as np
-import sys
 
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.metrics.pairwise import cosine_distances
@@ -7,6 +6,17 @@ from pyemd import emd_with_flow
 from nltk import word_tokenize
 from gensim.models import KeyedVectors
 from bisect import bisect_left
+
+
+def create_vocabulary(count_vectorizer, vectors, language, dim, missing, wvoc):
+    for word in count_vectorizer.get_feature_names():
+        if word in vectors[language]:
+            wvoc.append(vectors[language][word])
+        else:
+            if word not in missing:
+                missing[word] = np.zeros(dim)
+            wvoc.append(missing[word])
+    return wvoc, missing
 
 
 def load_wv(path, language='en', existing=None, binned=False):
@@ -97,9 +107,11 @@ def wmdo(wvvecs, ref, cand, ref_lang='en', cand_lang='en', delta=0.18, alpha=0.1
     ref = ' '.join(ref_list)
     cand = ' '.join(cand_list)
 
-    vc = CountVectorizer().fit(ref_list + cand_list)
+    common_vectorizer = CountVectorizer().fit(ref_list + cand_list)
+    ref_vectorizer = CountVectorizer().fit(ref_list)
+    cand_vectorizer = CountVectorizer().fit(cand_list)
 
-    v_obj, v_cap = vc.transform([ref, cand])
+    v_obj, v_cap = common_vectorizer.transform([ref, cand])
 
     v_obj = v_obj.toarray().ravel()
     v_cap = v_cap.toarray().ravel()
@@ -107,18 +119,14 @@ def wmdo(wvvecs, ref, cand, ref_lang='en', cand_lang='en', delta=0.18, alpha=0.1
     dim = wvvecs[ref_lang].vector_size
 
     # need to deal with missing words
-    wvoc = []
     missing = {}
+    wvoc = []
 
-    for word in vc.get_feature_names():
-        if word in wvvecs[cand_lang]:
-            wvoc.append(wvvecs[cand_lang][word])
-        elif word in wvvecs[ref_lang]:
-            wvoc.append(wvvecs[ref_lang][word])
-        else:
-            if word not in missing:
-                missing[word] = np.zeros(dim)
-            wvoc.append(missing[word])
+    if cand_lang == ref_lang:
+        wvoc, missing = create_vocabulary(common_vectorizer, wvvecs, cand_lang, dim, missing, wvoc)
+    else:
+        wvoc, missing = create_vocabulary(cand_vectorizer, wvvecs, cand_lang, dim, missing, wvoc)
+        wvoc, missing = create_vocabulary(ref_vectorizer, wvvecs, ref_lang, dim, missing, wvoc)
 
     distance_matrix = cosine_distances(wvoc)
 
@@ -135,7 +143,7 @@ def wmdo(wvvecs, ref, cand, ref_lang='en', cand_lang='en', delta=0.18, alpha=0.1
     (wmd, flow) = emd_with_flow(v_obj, v_cap, distance_matrix)
 
     # adding penalty
-    ratio = fragmentation(ref_list, cand_list, vc, flow)
+    ratio = fragmentation(ref_list, cand_list, common_vectorizer, flow)
     if ratio > 1:
         ratio = 1
     penalty = delta * ratio
