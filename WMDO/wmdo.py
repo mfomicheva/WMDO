@@ -8,14 +8,24 @@ from gensim.models import KeyedVectors
 from bisect import bisect_left
 
 
-def create_vocabulary(count_vectorizer, vectors, language, dim, missing, wvoc):
+def create_vocabulary(count_vectorizer, vectors, dim, ref_list, cand_list, ref_lang, cand_lang):
+    wvoc = []
+    missing = {}
     for word in count_vectorizer.get_feature_names():
-        if word in vectors[language]:
-            wvoc.append(vectors[language][word])
+        if word in ref_list:
+            if word in vectors[ref_lang]:
+                wvoc.append(vectors[ref_lang][word])
+            else:
+                if word not in missing:
+                    missing[word] = np.zeros(dim)
+                wvoc.append(missing[word])
         else:
-            if word not in missing:
-                missing[word] = np.zeros(dim)
-            wvoc.append(missing[word])
+            if word in vectors[cand_lang]:
+                wvoc.append(vectors[cand_lang][word])
+            else:
+                if word not in missing:
+                    missing[word] = np.zeros(dim)
+                wvoc.append(missing[word])
     return wvoc, missing
 
 
@@ -81,7 +91,10 @@ def fragmentation(ref_list, cand_list, vc, flow):
                     current = matched_index
                     matched_unigrams += 1
 
-        return chunks / matched_unigrams
+        try:
+            return chunks / matched_unigrams
+        except ZeroDivisionError:
+            return 0
     except IndexError:
         return 0
 
@@ -108,39 +121,40 @@ def wmdo(wvvecs, ref, cand, ref_lang='en', cand_lang='en', delta=0.18, alpha=0.1
     cand = ' '.join(cand_list)
 
     common_vectorizer = CountVectorizer().fit(ref_list + cand_list)
-    ref_vectorizer = CountVectorizer().fit(ref_list)
-    cand_vectorizer = CountVectorizer().fit(cand_list)
 
-    v_obj, v_cap = common_vectorizer.transform([ref, cand])
+    ref_count_vector, cand_count_vector = common_vectorizer.transform([ref, cand])
 
-    v_obj = v_obj.toarray().ravel()
-    v_cap = v_cap.toarray().ravel()
+    ref_count_vector = ref_count_vector.toarray().ravel()
+    cand_count_vector = cand_count_vector.toarray().ravel()
 
     dim = wvvecs[ref_lang].vector_size
 
-    # need to deal with missing words
-    missing = {}
-    wvoc = []
-
-    if cand_lang == ref_lang:
-        wvoc, missing = create_vocabulary(common_vectorizer, wvvecs, cand_lang, dim, missing, wvoc)
-    else:
-        wvoc, missing = create_vocabulary(cand_vectorizer, wvvecs, cand_lang, dim, missing, wvoc)
-        wvoc, missing = create_vocabulary(ref_vectorizer, wvvecs, ref_lang, dim, missing, wvoc)
+    wvoc, missing = create_vocabulary(common_vectorizer, wvvecs, dim, ref_list, cand_list, ref_lang, cand_lang)
 
     distance_matrix = cosine_distances(wvoc)
+    vocab_words = common_vectorizer.get_feature_names()
+    for cand_word_idx, count in enumerate(cand_count_vector):
+        if count > 0:
+            most_similar_ref_indexes = np.argsort(distance_matrix[cand_word_idx])
+            for ref_word_index in most_similar_ref_indexes[1:]:
+                if ref_count_vector[ref_word_index] > 0:
+                    print('{}: {}'.format(vocab_words[cand_word_idx], vocab_words[ref_word_index]))
+                    break
 
     if np.sum(distance_matrix) == 0.0:
-        return float('inf')
+        return 0., {}
+        #return float('inf')
 
-    v_obj = v_obj.astype(np.double)
-    v_cap = v_cap.astype(np.double)
+    ref_count_vector = ref_count_vector.astype(np.double)
+    cand_count_vector = cand_count_vector.astype(np.double)
 
-    v_obj /= v_obj.sum()
-    v_cap /= v_cap.sum()
+    ref_count_vector /= ref_count_vector.sum()
+    cand_count_vector /= cand_count_vector.sum()
 
     distance_matrix = distance_matrix.astype(np.double)
-    (wmd, flow) = emd_with_flow(v_obj, v_cap, distance_matrix)
+    (wmd, flow) = emd_with_flow(ref_count_vector, cand_count_vector, distance_matrix)
+
+    return wmd, {}
 
     # adding penalty
     ratio = fragmentation(ref_list, cand_list, common_vectorizer, flow)
@@ -154,10 +168,10 @@ def wmdo(wvvecs, ref, cand, ref_lang='en', cand_lang='en', delta=0.18, alpha=0.1
         if w not in wvvecs:
             missingwords += 1
     missingratio = missingwords / len(cand_list)
-    missing = alpha * missingratio
+    missing_penalty = alpha * missingratio
     
-    penalty += missing
+    penalty += missing_penalty
 
     wmd += penalty
     
-    return wmd
+    return wmd, missing

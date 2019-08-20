@@ -11,7 +11,7 @@ def test_computes_wmdo_same_languge():
     os.remove(vectors_file)
     test = 'test cat'
     reference = 'test cat'
-    score = wmdo(vectors, test, reference, delta=0.18, alpha=0.10)
+    score, _ = wmdo(vectors, test, reference, delta=0.18, alpha=0.10)
     assert score == 0.
 
 
@@ -22,5 +22,5 @@ def test_computes_wmdo_cross_lingual():
     os.remove(vectors_file)
     test = 'test cat'
     reference = 'dog test boy'
-    score = wmdo(vectors, reference, test, ref_lang='en', cand_lang='de', delta=0.18, alpha=0.10)
+    score, _ = wmdo(vectors, reference, test, ref_lang='en', cand_lang='de', delta=0.18, alpha=0.10)
     assert score == 0.
